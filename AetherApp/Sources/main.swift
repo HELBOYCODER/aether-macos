@@ -1,12 +1,13 @@
 import SwiftUI
+import AppKit
 
 @main
-struct AetherApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    var body: some Scene {
-        // No window scene — menu-bar only (LSUIElement).
-        Settings {
-            SettingsView()
-        }
+enum AetherEntry {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)  // menu-bar only
+        app.run()
     }
 }

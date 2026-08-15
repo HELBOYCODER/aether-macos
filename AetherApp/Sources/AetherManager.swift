@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Wraps the bundled `aether` CLI: launches it as a child process, streams its
 /// stdout/stderr, and exposes a simple connect/disconnect state machine.

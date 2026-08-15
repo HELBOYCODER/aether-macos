@@ -11,10 +11,12 @@ targets:
       - path: AetherApp/Sources
       - path: AetherApp/Resources
         buildPhase: resources
-    resources:
-      - path: AetherApp/Resources/Assets.xcassets
-      - path: AetherApp/Resources/aether
-        buildPhase: resources
+        includes:
+          - "*.swift"
+          - "*.plist"
+          - "*.mac"
+          - "Assets.xcassets"
+          - "aether"
     info:
       CFBundleDisplayName: Aether
       CFBundleName: Aether
@@ -27,9 +29,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluvex.aether
-        CODE_SIGN_ENTITLEMENTS: Resources/entitlements.mac
+        CODE_SIGN_ENTITLEMENTS: AetherApp/Resources/entitlements.mac
         ENABLE_HARDENED_RUNTIME: true
-        INFOPLIST_FILE: Resources/Info.plist
+        INFOPLIST_FILE: AetherApp/Resources/Info.plist
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         COMBINE_HIDPI_IMAGES: true

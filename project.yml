@@ -17,14 +17,7 @@ targets:
           - "*.mac"
           - "Assets.xcassets"
     info:
-      CFBundleDisplayName: Aether
-      CFBundleName: Aether
-      LSUIElement: true            # menu-bar app, no Dock icon
-      LSMinimumSystemVersion: "13.0"
-      CFBundleExecutable: AetherApp
-      NSMainNibFile: ""
-      NSPrincipalClass: NSApplication
-      NSHumanReadableCopyright: "Aether client UI wrapper — AGPL-3.0"
+      path: AetherApp/Resources/Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cluvex.aether

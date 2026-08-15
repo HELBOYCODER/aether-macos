@@ -14,9 +14,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install tooling (XcodeGen, create-dmg)
+        env:
+          HOMEBREW_NO_REQUIRE_TAP_TRUST: "1"
         run: |
-          brew install xcodegen create-dmg
+          brew install xcodegen
+          brew install --cask create-dmg 2>/dev/null || brew install create-dmg
           xcodegen version
+          which create-dmg && echo "create-dmg ok"
 
       - name: Download bundled aether binary (macOS arm64, v1.6.0)
         run: |

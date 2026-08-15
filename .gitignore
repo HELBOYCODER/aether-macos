@@ -1,0 +1,10 @@
+# XcodeGen / build artifacts
+build/
+*.xcodeproj
+DerivedData/
+Aether.dmg
+AetherApp.app
+# downloaded binary (regenerated in CI)
+AetherApp/Resources/aether
+*.tar.gz
+.DS_Store

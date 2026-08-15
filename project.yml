@@ -8,12 +8,12 @@ targets:
     platform: macOS
     deploymentTarget: "13.0"
     sources:
-      - path: Sources
-      - path: Resources
+      - path: AetherApp/Sources
+      - path: AetherApp/Resources
         buildPhase: resources
     resources:
-      - path: Resources/Assets.xcassets
-      - path: Resources/aether
+      - path: AetherApp/Resources/Assets.xcassets
+      - path: AetherApp/Resources/aether
         buildPhase: resources
     info:
       CFBundleDisplayName: Aether

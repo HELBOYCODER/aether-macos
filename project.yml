@@ -16,7 +16,6 @@ targets:
           - "*.plist"
           - "*.mac"
           - "Assets.xcassets"
-          - "aether"
     info:
       CFBundleDisplayName: Aether
       CFBundleName: Aether

@@ -1,0 +1,105 @@
+name: Build macOS .dmg
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tooling (XcodeGen, create-dmg)
+        run: |
+          brew install xcodegen create-dmg
+          xcodegen version
+
+      - name: Download bundled aether binary (macOS arm64, v1.6.0)
+        run: |
+          mkdir -p AetherApp/Resources/aether_app_bin
+          curl -fsSL -o aether.tar.gz \
+            https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/aether-macos-arm64.tar.gz
+          tar -xzf aether.tar.gz -C AetherApp/Resources/aether_app_bin
+          # the tarball extracts to ./aether
+          mv AetherApp/Resources/aether_app_bin/aether AetherApp/Resources/aether 2>/dev/null || true
+          chmod +x AetherApp/Resources/aether
+          ls -la AetherApp/Resources/aether
+          file AetherApp/Resources/aether
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (no signing, local dev identity)
+        run: |
+          xcodebuild -project AetherApp.xcodeproj \
+            -scheme AetherApp \
+            -configuration Release \
+            -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Locate built .app
+        id: app
+        run: |
+          APP=$(find build -name "AetherApp.app" -type d | head -n1)
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+          echo "Built: $APP"
+
+      - name: Optional ad-hoc / real codesign
+        env:
+          DEV_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_ISSUER: ${{ secrets.APPLE_ISSUER_ID }}
+        run: |
+          APP="${{ steps.app.outputs.path }}"
+          if [ -n "$DEV_ID" ]; then
+            echo "Real signing configured — codesign + notarize"
+            codesign --force --deep --options runtime \
+              --entitlements AetherApp/Resources/entitlements.mac \
+              --sign "$DEV_ID" "$APP"
+            # notarize (best-effort)
+            if [ -n "$APPLE_KEY" ]; then
+              xcrun notarytool submit "$APP" \
+                --key "$APPLE_KEY" --key-id "$APPLE_KEY_ID" --issuer "$APPLE_ISSUER" \
+                --wait || echo "notarize skipped/failed"
+            fi
+          else
+            echo "No signing secrets — ad-hoc codesign only (user must right-click > Open)"
+            codesign --force --deep --options runtime \
+              --entitlements AetherApp/Resources/entitlements.mac \
+              -s - "$APP"
+          fi
+
+      - name: Create .dmg
+        run: |
+          APP="${{ steps.app.outputs.path }}"
+          create-dmg \
+            --volname "Aether" \
+            --window-pos 200 120 \
+            --window-size 500 300 \
+            --icon "AetherApp.app" 125 135 \
+            --hide-extension "AetherApp.app" \
+            --app-drop-link 375 135 \
+            Aether.dmg "$APP"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Aether-macOS
+          path: |
+            Aether.dmg
+            ${{ steps.app.outputs.path }}
+          retention-days: 90
+
+      - name: Draft release on tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Aether.dmg

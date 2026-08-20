@@ -1,0 +1,158 @@
+name: Build PattNG macOS (.dmg)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-pattng-macos.yml'
+      - 'pattng/**'
+
+permissions:
+  contents: write
+
+env:
+  VERSION: 7.24.7-patt
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            rid: osx-arm64
+            goarch: arm64
+            pkg: macos-arm64
+          - arch: x64
+            rid: osx-x64
+            goarch: amd64
+            pkg: macos-64
+
+    steps:
+      - name: Checkout packaging repo
+        uses: actions/checkout@v4
+        with:
+          path: packaging
+
+      # ---------------- PattNG GUI (patterniha/v2rayN fork) ----------------
+      - name: Checkout patterniha/v2rayN
+        uses: actions/checkout@v4
+        with:
+          repository: patterniha/v2rayN
+          ref: master
+          submodules: recursive
+          fetch-depth: 0
+          path: v2rayN
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish v2rayN.Desktop
+        working-directory: v2rayN/v2rayN
+        run: |
+          dotnet publish ./v2rayN.Desktop/v2rayN.Desktop.csproj \
+            -c Release -r ${{ matrix.rid }} -p:SelfContained=true \
+            -o "$GITHUB_WORKSPACE/out"
+
+      - name: Publish AmazTool
+        working-directory: v2rayN/v2rayN
+        run: |
+          dotnet publish ./AmazTool/AmazTool.csproj \
+            -c Release -r ${{ matrix.rid }} -p:SelfContained=true -p:PublishTrimmed=true \
+            -o "$GITHUB_WORKSPACE/out"
+
+      - name: Strip debug symbols
+        run: find "$GITHUB_WORKSPACE/out" -type f -name '*.pdb' -delete
+
+      # ---------------- Patched Xray-core (patterniha/Xray-core) ----------------
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: false
+
+      - name: Checkout patterniha/Xray-core
+        uses: actions/checkout@v4
+        with:
+          repository: patterniha/Xray-core
+          ref: main
+          path: Xray-core
+
+      - name: Build patched xray
+        working-directory: Xray-core
+        env:
+          CGO_ENABLED: '0'
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -o "$GITHUB_WORKSPACE/xray" -trimpath -buildvcs=false \
+            -ldflags "-s -w -buildid=" ./main
+          file "$GITHUB_WORKSPACE/xray"
+
+      # ---------------- Assets: cores, geo files, icon ----------------
+      - name: Fetch upstream core bundle (sing-box, mihomo, geo data, icon)
+        run: |
+          FILE="v2rayN-${{ matrix.pkg }}.zip"
+          curl -fL --retry 3 -o "$FILE" \
+            "https://github.com/2dust/v2rayN-core-bin/raw/refs/heads/master/$FILE"
+          7z x "$FILE" -o_cores >/dev/null
+          cp -rf _cores/v2rayN-${{ matrix.pkg }}/* "$GITHUB_WORKSPACE/out/"
+          ls -la "$GITHUB_WORKSPACE/out/bin" || true
+
+      - name: Swap in patched Xray-core
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/out/bin/xray"
+          cp -f "$GITHUB_WORKSPACE/xray" "$GITHUB_WORKSPACE/out/bin/xray/xray"
+          chmod +x "$GITHUB_WORKSPACE/out/bin/xray/xray"
+          "$GITHUB_WORKSPACE/out/bin/xray/xray" version || true
+
+      # ---------------- Bundle as PattNG.app ----------------
+      - name: Build PattNG.app
+        run: |
+          PKG="$GITHUB_WORKSPACE/PattNG-Package-${{ matrix.arch }}"
+          APP="$PKG/PattNG.app"
+          mkdir -p "$APP/Contents/Resources"
+          cp -rf "$GITHUB_WORKSPACE/out" "$APP/Contents/MacOS"
+          if [ -f "$APP/Contents/MacOS/v2rayN.icns" ]; then
+            cp -f "$APP/Contents/MacOS/v2rayN.icns" "$APP/Contents/Resources/AppIcon.icns"
+          fi
+          echo "When this file exists, app will not store configs under this folder" \
+            > "$APP/Contents/MacOS/NotStoreConfigHere.txt"
+          chmod +x "$APP/Contents/MacOS/v2rayN"
+          chmod -R +x "$APP/Contents/MacOS/bin" || true
+          cp -f packaging/pattng/Info.plist "$APP/Contents/Info.plist"
+          /usr/bin/sed -i '' "s/__VERSION__/${VERSION}/g" "$APP/Contents/Info.plist"
+
+      - name: Ad-hoc codesign
+        run: |
+          APP="$GITHUB_WORKSPACE/PattNG-Package-${{ matrix.arch }}/PattNG.app"
+          codesign --force --deep -s - "$APP" || echo "adhoc sign failed (non-fatal)"
+
+      - name: Create .dmg
+        run: |
+          brew install create-dmg
+          APP="$GITHUB_WORKSPACE/PattNG-Package-${{ matrix.arch }}/PattNG.app"
+          create-dmg \
+            --volname "PattNG Installer" \
+            --window-size 700 420 \
+            --icon-size 100 \
+            --icon "PattNG.app" 160 185 \
+            --hide-extension "PattNG.app" \
+            --app-drop-link 500 185 \
+            "PattNG-${{ matrix.pkg }}.dmg" \
+            "$APP" \
+          || hdiutil create -volname "PattNG Installer" -srcfolder "$APP" -ov -format UDZO "PattNG-${{ matrix.pkg }}.dmg"
+          ls -la PattNG-*.dmg
+
+      - name: Upload dmg
+        uses: actions/upload-artifact@v4
+        with:
+          name: PattNG-${{ matrix.pkg }}-dmg
+          path: PattNG-*.dmg
+          if-no-files-found: error
+          retention-days: 90

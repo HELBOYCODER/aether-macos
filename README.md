@@ -1,37 +1,37 @@
-# Aether for macOS (menu-bar app)
+# Aether برای macOS (اپ منوبار)
 
-A native SwiftUI wrapper around the [CluvexStudio/Aether](https://github.com/CluvexStudio/Aether)
-CLI. Menu-bar only, no Dock icon. One click to connect, pick protocol/scan mode,
-set system proxy, watch the live log.
+یک رپر بومی SwiftUI دور CLI کلاینت [Aether](https://github.com/CluvexStudio/Aether).
+فقط در منوبار زندگی می‌کند — بدون آیکون در Dock. با یک کلیک وصل شو، پروتکل و حالت اسکن را انتخاب کن، پروکسی سیستم را روشن کن و لاگ زنده را تماشا کن.
 
-## Features
-- Menu-bar status item with connect/disconnect and live state colour
-- Protocol picker: MASQUE / WireGuard / WARP-in-WARP (`gool`)
-- Scan mode: turbo / balanced / thorough / stealth / ironclad
-- Obfuscation: off / light / balanced / aggressive
-- Optional system-wide SOCKS proxy via `networksetup` (127.0.0.1 only — never 0.0.0.0)
-- Live log window + settings panel (persisted in UserDefaults)
-- Bundled `aether` binary (v1.6.0) downloaded at build time, no runtime network fetch
+## ✨ امکانات
 
-## Security notes
-- The SOCKS5 listener is always bound to `127.0.0.1` inside the bundle wrapper.
-- System proxy, when enabled, targets only the active Wi-Fi/Ethernet service and
-  points at `127.0.0.1` — it never exposes the tunnel to the LAN.
-- No root, no network kext/driver; everything runs in the user session.
-- `aether` is fetched from the official GitHub release (pinned version) and
-  ad-hoc / Developer-ID signed with the bundled `entitlements.mac`.
+- آیتم وضعیت در منوبار با اتصال/قطع و رنگ حالتِ زنده
+- انتخاب پروتکل: MASQUE / WireGuard / WARP-in-WARP (`gool`)
+- حالت اسکن: turbo / balanced / thorough / stealth / ironclad
+- مبهم‌سازی (Obfuscation): خاموش / سبک / متوسط / تهاجمی
+- پروکسی SOCKS سراسری اختیاری از طریق `networksetup` (فقط روی `127.0.0.1` — هرگز `0.0.0.0`)
+- پنجره لاگ زنده + پنل تنظیمات (ذخیره‌شده در UserDefaults)
+- باینری `aether` نسخه v1.6.0 در زمان بیلد دانلود می‌شود؛ هیچ دانلودی در زمان اجرا انجام نمی‌شود
 
-## Build (GitHub Actions, zero local tooling)
-1. Fork / push this repo to a public GitHub repo.
-2. The `Build macOS .dmg` workflow runs on `macos-latest`, downloads the pinned
-   `aether` binary, builds the app, signs it (ad-hoc unless you add secrets), and
-   uploads `Aether.dmg` + `AetherApp.app` as a 90-day Artifact.
-3. Optional: add repo Secrets `MACOS_SIGN_IDENTITY`, `APPLE_API_KEY`,
-   `APPLE_KEY_ID`, `APPLE_ISSUER_ID` for a notarized, Gatekeeper-clean build.
+## 🔒 نکات امنیتی
 
-## Install
-Download `Aether.dmg` from Actions → Artifacts, open it, drag `AetherApp.app`
-to Applications. On ad-hoc builds, right-click → Open the first time.
+- شنونده SOCKS5 همیشه داخل رپر باندل به `127.0.0.1` محدود است.
+- پروکسی سیستم، وقتی فعال شود، فقط روی سرویس فعال Wi-Fi/Ethernet اعمال می‌شود و به `127.0.0.1` اشاره می‌کند — تونل هرگز در شبکه محلی (LAN) در دسترس قرار نمی‌گیرد.
+- بدون root، بدون kext یا درایور شبکه؛ همه‌چیز در نشست کاربر اجرا می‌شود.
+- باینری `aether` از ریلیز رسمی گیت‌هاب (نسخه پین‌شده) دریافت و با امضای ad-hoc / Developer-ID همراه `entitlements.mac` امضا می‌شود.
 
-## License
-App wrapper: MIT. Bundled `aether` binary: AGPL-3.0 (Cloudflare WARP client).
+## 🛠 بیلد (با GitHub Actions — بدون نیاز به ابزار محلی)
+
+1. این مخزن را فورک کن یا روی یک مخزن عمومی گیت‌هاب پوش کن.
+2. ورک‌فلو `Build macOS .dmg` روی `macos-latest` اجرا می‌شود، باینری `aether` پین‌شده را دانلود می‌کند، اپ را می‌سازد، امضا می‌کند (ad-hoc مگر اینکه Secret اضافه کنی) و خروجی `Aether.dmg` + `AetherApp.app` را به‌صورت Artifact با ۹۰ روز اعتبار آپلود می‌کند.
+3. اختیاری: برای بیلد Notarized و بدون مزاحمت Gatekeeper، این Secret ها را اضافه کن:
+   `MACOS_SIGN_IDENTITY` ، `APPLE_API_KEY` ، `APPLE_KEY_ID` ، `APPLE_ISSUER_ID`
+
+## 📦 نصب
+
+فایل `Aether.dmg` را از مسیر **Actions ← Artifacts** دانلود کن، بازش کن و `AetherApp.app` را بکش داخل Applications.
+در بیلدهای ad-hoc، بار اول روی اپ راست‌کلیک کن و **Open** را بزن.
+
+## 📄 لایسنس
+
+رپر اپلیکیشن: MIT — باینری `aether`: AGPL-3.0 (کلاینت WARP کلودفلر).

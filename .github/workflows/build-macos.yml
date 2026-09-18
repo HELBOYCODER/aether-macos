@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - "feat/**"
     paths:
       - "AetherApp/**"
       - "project.yml"
@@ -47,9 +48,9 @@ jobs:
         run: |
           mkdir -p AetherApp/Resources/aether_app_bin
           curl -fsSL -o aether.tar.gz \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
+            "https://github.com/CluvexStudio/Aether/releases/download/v2.0.0/$AETHER_ASSET"
           curl -fsSL -o aether.sha256 \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
+            "https://github.com/CluvexStudio/Aether/releases/download/v2.0.0/$AETHER_ASSET.sha256"
 
           expected="$(awk '{print $1}' aether.sha256)"
           actual="$(shasum -a 256 aether.tar.gz | awk '{print $1}')"
@@ -59,6 +60,28 @@ jobs:
           mv AetherApp/Resources/aether_app_bin/aether AetherApp/Resources/aether
           chmod +x AetherApp/Resources/aether
           file AetherApp/Resources/aether
+
+      - name: Verify HEV macOS source availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/immaghzbad/AetherST/main/app/src/main/cpp/third_party/hev-socks5-tunnel/build-apple.sh -o /tmp/hev-build-apple.sh
+          grep -q 'buildStatic macosx x86_64' /tmp/hev-build-apple.sh
+          grep -q 'buildStatic macosx arm64' /tmp/hev-build-apple.sh
+          echo "HEV upstream contains native macOS arm64/x86_64 build targets."
+
+      - name: Build HEV universal static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --recurse-submodules https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev-socks5-tunnel
+          cd /tmp/hev-socks5-tunnel
+          export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
+          ./build-apple.sh
+          mkdir -p "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework"
+          cp -R HevSocks5Tunnel.xcframework/* "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/"
+          find "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework" -name libhev-socks5-tunnel.a -print -quit | grep -q libhev-socks5-tunnel.a
+          cd "$GITHUB_WORKSPACE"
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -84,21 +107,34 @@ jobs:
           echo "path=$APP" >> "$GITHUB_OUTPUT"
           echo "Built: $APP"
           file "$APP/Contents/MacOS/AetherApp"
+          EXT="$APP/Contents/PlugIns/AetherPacketTunnel.appex"
+          test -f "$EXT/Contents/MacOS/AetherPacketTunnel"
+          nm -gU "$EXT/Contents/MacOS/AetherPacketTunnel" > /tmp/aether-packet-tunnel-nm.txt
+          grep -q "hev_socks5_tunnel_main_from_str" /tmp/aether-packet-tunnel-nm.txt
 
       - name: Sign
         env:
           DEV_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
           APP="${{ steps.app.outputs.path }}"
+          EXT="$APP/Contents/PlugIns/AetherPacketTunnel.appex"
+          test -d "$EXT"
           if [ -n "$DEV_ID" ]; then
-            codesign --force --deep --options runtime \
+            codesign --force --options runtime \
+              --entitlements AetherApp/PacketTunnel/entitlements.mac \
+              --sign "$DEV_ID" "$EXT"
+            codesign --force --options runtime \
               --entitlements AetherApp/Resources/entitlements.mac \
               --sign "$DEV_ID" "$APP"
           else
-            codesign --force --deep --options runtime \
+            codesign --force --options runtime \
+              --entitlements AetherApp/PacketTunnel/entitlements.mac \
+              -s - "$EXT"
+            codesign --force --options runtime \
               --entitlements AetherApp/Resources/entitlements.mac \
               -s - "$APP"
           fi
+          codesign --verify --strict "$EXT"
           codesign --verify --deep --strict "$APP"
 
       - name: Create DMG

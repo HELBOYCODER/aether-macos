@@ -7,6 +7,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var controlConnection: NWConnection?
     private var stopped = false
     private var packetReadActive = false
+    private var hevActive = false
 
     override func startTunnel(options: [String : NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
@@ -37,6 +38,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.packetReadActive = true
             self.readPackets()
             self.startControlProbe(host: upstreamHost ?? "127.0.0.1", port: upstreamPort)
+            self.osLog("Network Extension configured; HEV bridge is not embedded yet")
             completionHandler(nil)
         }
     }
@@ -45,6 +47,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                              completionHandler: @escaping () -> Void) {
         stopped = true
         packetReadActive = false
+        hevActive = false
         controlConnection?.cancel()
         controlConnection = nil
         completionHandler()

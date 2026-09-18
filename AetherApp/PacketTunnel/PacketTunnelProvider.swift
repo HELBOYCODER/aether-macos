@@ -1,35 +1,33 @@
 import Foundation
 import Network
 import NetworkExtension
+import Darwin
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var settings: NEPacketTunnelNetworkSettings?
-    private var controlConnection: NWConnection?
     private var stopped = false
     private var packetReadActive = false
+    private var hevFD: Int32 = -1
+    private var hevReadSource: DispatchSourceRead?
+    private let packetQueue = DispatchQueue(label: "com.cluvex.aether.packet-tunnel", qos: .userInitiated)
 
     override func startTunnel(options: [String : NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
         stopped = false
-
         let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration ?? [:]
-        let host = (config["upstreamHost"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let port = (config["upstreamPort"] as? Int) ?? 443
+        let socksHost = (config["socksHost"] as? String) ?? "127.0.0.1"
+        let socksPort = (config["socksPort"] as? Int) ?? 1080
+        let remote = (config["upstreamHost"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let mtu = max(576, min((config["mtu"] as? Int) ?? 1320, 9000))
 
         let network = NEPacketTunnelNetworkSettings(
-            tunnelRemoteAddress: host?.isEmpty == false ? host! : "127.0.0.1"
+            tunnelRemoteAddress: remote?.isEmpty == false ? remote! : "127.0.0.1"
         )
         network.mtu = NSNumber(value: mtu)
 
-        let ipv4 = NEIPv4Settings(
-            addresses: ["198.18.0.1"],
-            subnetMasks: ["255.255.0.0"]
-        )
+        let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
         ipv4.includedRoutes = [NEIPv4Route.default()]
-        ipv4.excludedRoutes = [
-            NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
-        ]
+        ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")]
         network.ipv4Settings = ipv4
 
         let dns = NEDNSSettings(servers: ["198.18.0.2"])
@@ -38,30 +36,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         settings = network
         setTunnelNetworkSettings(network) { [weak self] error in
-            guard let self else {
-                completionHandler(error)
-                return
+            guard let self else { completionHandler(error); return }
+            if let error { completionHandler(error); return }
+
+            let hevConfig = self.makeHEVConfig(
+                socksHost: socksHost,
+                socksPort: socksPort,
+                mtu: mtu
+            )
+            let fd = hevConfig.withCString { ptr in
+                aether_hev_start(ptr, hevConfig.utf8.count)
             }
-            if let error {
-                completionHandler(error)
+            guard fd >= 0 else {
+                self.log("HEV start failed")
+                completionHandler(NSError(domain: "AetherPacketTunnel", code: 1001,
+                                           userInfo: [NSLocalizedDescriptionKey: "Unable to start HEV dataplane"]))
                 return
             }
 
+            self.hevFD = fd
+            self.startHEVOutputReader()
             self.packetReadActive = true
             self.readPackets()
-            self.startControlProbe(host: host ?? "127.0.0.1", port: port)
-
-            // HEV is linked into the extension target through HEVBridge.c.
-            // It still needs the actual NEPacketTunnelProvider packet path adapter;
-            // NEPacketTunnelFlow is not a raw BSD TUN descriptor, so passing a
-            // fabricated fd here would be unsafe. Keep the route fail-closed until
-            // that adapter is implemented.
-            self.log("HEV native library linked; packetFlow adapter remains fail-closed")
-
-            // This provider now owns the system route, but intentionally does not
-            // claim packet forwarding until the native HEV adapter is linked.
-            // Dropping packets prevents accidental clear-net fallback.
-            self.log("Tunnel network settings installed; native HEV dataplane pending")
+            self.log("HEV dataplane started")
             completionHandler(nil)
         }
     }
@@ -70,37 +67,91 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                              completionHandler: @escaping () -> Void) {
         stopped = true
         packetReadActive = false
-        controlConnection?.cancel()
-        controlConnection = nil
+        hevReadSource?.cancel()
+        hevReadSource = nil
+        aether_hev_stop()
+        hevFD = -1
         completionHandler()
     }
 
+    private func makeHEVConfig(socksHost: String, socksPort: Int, mtu: Int) -> String {
+        let host = socksHost.replacingOccurrences(of: "\\", with: "")
+                         .replacingOccurrences(of: "\n", with: "")
+                         .replacingOccurrences(of: "\r", with: "")
+        let port = max(1, min(socksPort, 65535))
+        return """
+        tunnel:
+          mtu: \(mtu)
+          ipv4: 198.18.0.1
+          ipv6: 'fd00::1'
+
+        socks5:
+          address: \(host)
+          port: \(port)
+          udp: 'udp'
+
+        mapdns:
+          address: 198.18.0.2
+          port: 53
+          network: 100.64.0.0
+          netmask: 255.192.0.0
+          cache-size: 10000
+          nat64-prefix: 64:ff9b::/96
+
+        misc:
+          log-level: warn
+          connect-timeout: 5000
+          read-write-timeout: 60000
+          udp-read-write-timeout: 180000
+        """
+    }
+
     private func readPackets() {
-        guard !stopped, packetReadActive else { return }
-        packetFlow.readPackets { [weak self] packets, _ in
-            guard let self, !self.stopped, self.packetReadActive else { return }
-            if !packets.isEmpty {
-                self.log("received \(packets.count) packet(s); no dataplane bridge linked")
+        guard !stopped, packetReadActive, hevFD >= 0 else { return }
+        packetFlow.readPackets { [weak self] packets, protocols in
+            guard let self, !self.stopped, self.packetReadActive, self.hevFD >= 0 else { return }
+            for (index, packet) in packets.enumerated() {
+                guard !packet.isEmpty else { continue }
+                let family: UInt32
+                if index < protocols.count {
+                    family = protocols[index].uint32Value
+                } else {
+                    family = packet.first.map { (($0 >> 4) == 6) ? UInt32(AF_INET6) : UInt32(AF_INET) } ?? UInt32(AF_INET)
+                }
+                var netFamily = family.bigEndian
+                let ok = packet.withUnsafeBytes { raw -> Bool in
+                    guard let base = raw.baseAddress else { return false }
+                    var iov = [iovec(iov_base: &netFamily, iov_len: MemoryLayout<UInt32>.size),
+                               iovec(iov_base: UnsafeMutableRawPointer(mutating: base), iov_len: raw.count)]
+                    return withUnsafeMutablePointer(to: &iov[0]) { first in
+                        sendmsg(self.hevFD, first, 0) >= 0
+                    }
+                }
+                if !ok { self.log("HEV packet send failed: \(String(cString: strerror(errno)))") }
             }
             self.readPackets()
         }
     }
 
-    private func startControlProbe(host: String, port: Int) {
-        guard !stopped, let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return }
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
-        controlConnection = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .ready:
-                self?.log("upstream control connection ready")
-            case .failed(let error):
-                self?.log("upstream probe failed: \(error.localizedDescription)")
-            default:
-                break
-            }
+    private func startHEVOutputReader() {
+        guard hevFD >= 0 else { return }
+        let source = DispatchSource.makeReadSource(fileDescriptor: hevFD, queue: packetQueue)
+        source.setEventHandler { [weak self] in
+            guard let self, !self.stopped, self.hevFD >= 0 else { return }
+            var buffer = [UInt8](repeating: 0, count: 4 + 65536)
+            let count = recv(self.hevFD, &buffer, buffer.count, 0)
+            guard count > 4 else { return }
+            let family = UInt32(buffer[0]) << 24 | UInt32(buffer[1]) << 16 |
+                         UInt32(buffer[2]) << 8 | UInt32(buffer[3])
+            let packet = Data(buffer[4..<count])
+            let proto = NSNumber(value: Int(family))
+            self.packetFlow.writePackets([packet], withProtocols: [proto])
         }
-        connection.start(queue: .global(qos: .userInitiated))
+        source.setCancelHandler { [weak self] in
+            if let fd = self?.hevFD, fd >= 0 { close(fd) }
+        }
+        hevReadSource = source
+        source.resume()
     }
 
     private func log(_ message: String) {

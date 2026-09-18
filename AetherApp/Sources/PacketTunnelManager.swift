@@ -10,6 +10,7 @@ final class PacketTunnelManager: ObservableObject {
 
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
+    private var pendingBypassIPs: [String] = []
 
     private init() {}
 
@@ -91,6 +92,9 @@ final class PacketTunnelManager: ObservableObject {
             try manager.connection.startVPNTunnel()
             status = manager.connection.status
             errorMessage = nil
+            if !pendingBypassIPs.isEmpty {
+                sendBypassIPs(pendingBypassIPs)
+            }
         } catch {
             errorMessage = error.localizedDescription
             status = manager?.connection.status ?? .disconnected
@@ -114,12 +118,20 @@ final class PacketTunnelManager: ObservableObject {
     }
 
     func updateBypassIPs(_ ips: [String]) {
-        guard let session = manager?.connection as? NETunnelProviderSession else { return }
-        guard session.status == .connected else { return }
-
         let clean = Array(Set(ips.filter {
             !$0.isEmpty && !$0.hasPrefix("127.") && $0 != "::1" && $0 != "0.0.0.0"
         })).sorted()
+        pendingBypassIPs = clean
+
+        guard let session = manager?.connection as? NETunnelProviderSession,
+              session.status == .connected else { return }
+
+        sendBypassIPs(clean)
+    }
+
+    private func sendBypassIPs(_ clean: [String]) {
+        guard let session = manager?.connection as? NETunnelProviderSession,
+              session.status == .connected else { return }
 
         guard let data = try? JSONSerialization.data(
             withJSONObject: ["type": "bypassIPs", "ips": clean]

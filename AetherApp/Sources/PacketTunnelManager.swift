@@ -62,6 +62,10 @@ final class PacketTunnelManager: ObservableObject {
                 )
             }
 
+            if manager.connection.status == .connected || manager.connection.status == .connecting {
+                return
+            }
+
             let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol)
                 ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.cluvex.aether.PacketTunnel"

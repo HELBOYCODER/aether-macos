@@ -6,6 +6,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var settings: NEPacketTunnelNetworkSettings?
     private var controlConnection: NWConnection?
     private var stopped = false
+    private var packetReadActive = false
 
     override func startTunnel(options: [String : NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
@@ -33,6 +34,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
 
+            self.packetReadActive = true
             self.readPackets()
             self.startControlProbe(host: upstreamHost ?? "127.0.0.1", port: upstreamPort)
             completionHandler(nil)
@@ -42,6 +44,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason,
                              completionHandler: @escaping () -> Void) {
         stopped = true
+        packetReadActive = false
         controlConnection?.cancel()
         controlConnection = nil
         completionHandler()
@@ -54,15 +57,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     }
 
     private func readPackets() {
-        guard !stopped else { return }
+        guard !stopped, packetReadActive else { return }
         packetFlow.readPackets { [weak self] packets, protocols in
-            guard let self, !self.stopped else { return }
+            guard let self, !self.stopped, self.packetReadActive else { return }
 
-            // Phase 1 intentionally does not pretend that a raw packet can be
-            // sent to a SOCKS listener. A packet-to-proxy adapter is required.
-            // Dropping here is safer than leaking packets outside the tunnel.
+            // The packet flow is intentionally drained continuously. The actual
+            // packet-to-SOCKS dataplane is provided by the HEV bridge added in
+            // the next integration stage, so packets are not reinjected here.
             if !packets.isEmpty {
-                self.packetFlow.readPackets { _, _ in }
+                self.osLog("received \(packets.count) packet(s) before dataplane bridge")
             }
             self.readPackets()
         }

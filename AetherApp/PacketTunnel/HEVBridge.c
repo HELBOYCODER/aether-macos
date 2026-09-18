@@ -54,7 +54,6 @@ int aether_hev_start(const char *config, size_t config_len) {
         free(args->config); free(args);
         return -1;
     }
-    pthread_detach(g_thread);
     return g_app_fd;
 }
 
@@ -64,5 +63,6 @@ void aether_hev_stop(void) {
         return;
     }
     hev_socks5_tunnel_quit();
+    pthread_join(g_thread, NULL);
     if (g_app_fd >= 0) { close(g_app_fd); g_app_fd = -1; }
 }

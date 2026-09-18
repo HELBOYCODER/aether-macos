@@ -141,6 +141,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self, !self.stopped, self.hevFD >= 0 else { return }
             var buffer = [UInt8](repeating: 0, count: 4 + 65536)
             let count = recv(self.hevFD, &buffer, buffer.count, 0)
+            if count <= 0 {
+                self.packetReadActive = false
+                self.hevReadSource?.cancel()
+                self.cancelTunnelWithError(NSError(domain: "AetherPacketTunnel", code: 1002,
+                                                    userInfo: [NSLocalizedDescriptionKey: "HEV dataplane stopped"]))
+                return
+            }
             guard count > 4 else { return }
             let family = UInt32(buffer[0]) << 24 | UInt32(buffer[1]) << 16 |
                          UInt32(buffer[2]) << 8 | UInt32(buffer[3])

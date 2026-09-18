@@ -148,6 +148,7 @@ final class PacketTunnelManager: ObservableObject {
     }
 
     func stop() {
+        pendingBypassIPs = []
         manager?.connection.stopVPNTunnel()
         status = manager?.connection.status ?? .disconnected
     }

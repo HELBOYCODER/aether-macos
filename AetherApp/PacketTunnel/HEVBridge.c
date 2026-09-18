@@ -29,7 +29,7 @@ static void *hev_thread_main(void *opaque) {
 
 int aether_hev_start(const char *config, size_t config_len, int tun_fd) {
     if (!config || config_len == 0 || config_len > UINT_MAX ||
-        tun_fd < 0 || atomic_load(&g_running)) {
+        tun_fd < 0 || atomic_load(&g_running) || atomic_load(&g_thread_created)) {
         return -1;
     }
 

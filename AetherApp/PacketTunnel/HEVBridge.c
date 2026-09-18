@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <limits.h>
 
 extern int hev_socks5_tunnel_main_from_str(const unsigned char *, unsigned int, int);
 extern void hev_socks5_tunnel_quit(void);

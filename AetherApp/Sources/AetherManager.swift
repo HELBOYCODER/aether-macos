@@ -14,7 +14,7 @@ final class AetherManager {
 
     struct Settings: Codable {
         var mode: ConnectionMode = .aether
-        var \`protocol\`: ProtocolKind = .masque
+        var `protocol`: ProtocolKind = .masque
         var scan: ScanMode = .balanced
         var obfuscation: String = "balanced"
         var bindHTTP: Bool = false
@@ -33,7 +33,7 @@ final class AetherManager {
         init() {}
 
         private enum CodingKeys: String, CodingKey {
-            case mode, \`protocol\`, scan, obfuscation, bindHTTP, launchOnStart
+            case mode, `protocol`, scan, obfuscation, bindHTTP, launchOnStart
             case systemProxy, httpProxyPort, socksPort, extraArgs
             case sshHost, sshUser, sshPort, sshIdentityFile
         }
@@ -41,7 +41,7 @@ final class AetherManager {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             mode = try c.decodeIfPresent(ConnectionMode.self, forKey: .mode) ?? .aether
-            \`protocol\` = try c.decodeIfPresent(ProtocolKind.self, forKey: .protocol) ?? .masque
+            `protocol` = try c.decodeIfPresent(ProtocolKind.self, forKey: .protocol) ?? .masque
             scan = try c.decodeIfPresent(ScanMode.self, forKey: .scan) ?? .balanced
             obfuscation = try c.decodeIfPresent(String.self, forKey: .obfuscation) ?? "balanced"
             bindHTTP = try c.decodeIfPresent(Bool.self, forKey: .bindHTTP) ?? false

@@ -148,9 +148,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let proto = NSNumber(value: Int(family))
             self.packetFlow.writePackets([packet], withProtocols: [proto])
         }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.hevFD, fd >= 0 { close(fd) }
-        }
+        source.setCancelHandler { }
         hevReadSource = source
         source.resume()
     }

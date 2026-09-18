@@ -182,6 +182,7 @@ final class AetherManager {
             self?.queue.async {
                 guard let self else { return }
                 self.process = nil
+                self.stopSystemTunnel()
                 if proc.terminationStatus != 0 {
                     self.setState(.error("ssh exited with code \(proc.terminationStatus)"))
                 } else {

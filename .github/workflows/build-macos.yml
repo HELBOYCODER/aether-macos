@@ -70,6 +70,19 @@ jobs:
           grep -q 'buildStatic macosx arm64' /tmp/hev-build-apple.sh
           echo "HEV upstream contains native macOS arm64/x86_64 build targets."
 
+      - name: Build HEV universal static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev-socks5-tunnel
+          cd /tmp/hev-socks5-tunnel
+          ./build-apple.sh
+          test -f HevSocks5Tunnel.xcframework/macosx-x86_64-arm64/libhev-socks5-tunnel.a || true
+          mkdir -p "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework"
+          cp -R HevSocks5Tunnel.xcframework/* "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/"
+          test -f "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/macosx-x86_64-arm64/libhev-socks5-tunnel.a"
+          cd "$GITHUB_WORKSPACE"
+
       - name: Generate Xcode project
         run: xcodegen generate
 

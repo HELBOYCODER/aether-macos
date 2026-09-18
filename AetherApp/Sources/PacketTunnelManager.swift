@@ -17,28 +17,31 @@ final class PacketTunnelManager: ObservableObject {
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
             let selected = managers.first ?? NETunnelProviderManager()
-            if selected.protocolConfiguration == nil {
-                let proto = NETunnelProviderProtocol()
+
+            let proto: NETunnelProviderProtocol
+            if let existing = selected.protocolConfiguration as? NETunnelProviderProtocol {
+                proto = existing
+            } else {
+                proto = NETunnelProviderProtocol()
                 proto.providerBundleIdentifier = "com.cluvex.aether.PacketTunnel"
                 proto.serverAddress = "Aether"
                 proto.providerConfiguration = [
                     "upstreamHost": "127.0.0.1",
-                    "upstreamPort": 1819,
+                    "upstreamPort": AetherManager.shared.settings.socksPort,
                     "mtu": 1320,
-                "socksHost": "127.0.0.1",
-                "socksPort": AetherManager.shared.settings.socksPort
+                    "socksHost": "127.0.0.1",
+                    "socksPort": AetherManager.shared.settings.socksPort
                 ]
                 selected.protocolConfiguration = proto
                 selected.localizedDescription = "Aether"
                 selected.isEnabled = true
-                manager = selected
-            installStatusObserver(for: selected)
                 try await selected.saveToPreferences()
                 try await selected.loadFromPreferences()
-            } else {
-                manager = selected
             }
 
+            proto.providerBundleIdentifier = "com.cluvex.aether.PacketTunnel"
+            selected.protocolConfiguration = proto
+            manager = selected
             status = selected.connection.status
             installStatusObserver(for: selected)
         } catch {
@@ -48,9 +51,19 @@ final class PacketTunnelManager: ObservableObject {
 
     func start(upstreamHost: String, upstreamPort: Int, mtu: Int = 1320) async {
         do {
-            if manager == nil { await load() }
-            guard let manager else { throw NSError(domain: "Aether", code: 1, userInfo: [NSLocalizedDescriptionKey: "VPN configuration unavailable"]) }
-            let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
+            if manager == nil {
+                await load()
+            }
+            guard let manager else {
+                throw NSError(
+                    domain: "Aether",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "VPN configuration unavailable"]
+                )
+            }
+
+            let proto = (manager.protocolConfiguration as? NETunnelProviderProtocol)
+                ?? NETunnelProviderProtocol()
             proto.providerBundleIdentifier = "com.cluvex.aether.PacketTunnel"
             proto.serverAddress = upstreamHost
             proto.providerConfiguration = [
@@ -60,15 +73,21 @@ final class PacketTunnelManager: ObservableObject {
                 "socksHost": "127.0.0.1",
                 "socksPort": AetherManager.shared.settings.socksPort
             ]
+
             manager.protocolConfiguration = proto
+            manager.localizedDescription = "Aether"
             manager.isEnabled = true
+
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
             installStatusObserver(for: manager)
+
             try manager.connection.startVPNTunnel()
             status = manager.connection.status
+            errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+            status = manager?.connection.status ?? .disconnected
         }
     }
 
@@ -76,6 +95,7 @@ final class PacketTunnelManager: ObservableObject {
         if let statusObserver {
             NotificationCenter.default.removeObserver(statusObserver)
         }
+
         statusObserver = NotificationCenter.default.addObserver(
             forName: .NEVPNStatusDidChange,
             object: manager.connection,
@@ -90,5 +110,11 @@ final class PacketTunnelManager: ObservableObject {
     func stop() {
         manager?.connection.stopVPNTunnel()
         status = manager?.connection.status ?? .disconnected
+    }
+
+    deinit {
+        if let statusObserver {
+            NotificationCenter.default.removeObserver(statusObserver)
+        }
     }
 }

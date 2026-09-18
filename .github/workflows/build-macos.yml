@@ -48,9 +48,9 @@ jobs:
         run: |
           mkdir -p AetherApp/Resources/aether_app_bin
           curl -fsSL -o aether.tar.gz \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
+            "https://github.com/CluvexStudio/Aether/releases/download/v2.0.0/$AETHER_ASSET"
           curl -fsSL -o aether.sha256 \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
+            "https://github.com/CluvexStudio/Aether/releases/download/v2.0.0/$AETHER_ASSET.sha256"
 
           expected="$(awk '{print $1}' aether.sha256)"
           actual="$(shasum -a 256 aether.tar.gz | awk '{print $1}')"

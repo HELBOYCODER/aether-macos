@@ -78,10 +78,9 @@ jobs:
           cd /tmp/hev-socks5-tunnel
           export MAKEFLAGS="-j$(sysctl -n hw.ncpu)"
           ./build-apple.sh
-          test -f HevSocks5Tunnel.xcframework/macosx-x86_64-arm64/libhev-socks5-tunnel.a || true
           mkdir -p "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework"
           cp -R HevSocks5Tunnel.xcframework/* "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/"
-          test -f "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/macosx-x86_64-arm64/libhev-socks5-tunnel.a"
+          find "$GITHUB_WORKSPACE/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework" -name libhev-socks5-tunnel.a -print -quit | grep -q libhev-socks5-tunnel.a
           cd "$GITHUB_WORKSPACE"
 
       - name: Generate Xcode project

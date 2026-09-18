@@ -7,29 +7,41 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var controlConnection: NWConnection?
     private var stopped = false
     private var packetReadActive = false
-    private var hevActive = false
 
     override func startTunnel(options: [String : NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
         stopped = false
 
         let config = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration ?? [:]
-        let upstreamHost = (config["upstreamHost"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let upstreamPort = (config["upstreamPort"] as? Int) ?? 443
+        let host = (config["upstreamHost"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let port = (config["upstreamPort"] as? Int) ?? 443
+        let mtu = max(576, min((config["mtu"] as? Int) ?? 1320, 9000))
 
-        let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: upstreamHost?.isEmpty == false ? upstreamHost! : "127.0.0.1")
-        network.mtu = NSNumber(value: (config["mtu"] as? Int) ?? 1280)
-        network.ipv4Settings = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
-        network.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
-        network.ipv4Settings?.excludedRoutes = [
+        let network = NEPacketTunnelNetworkSettings(
+            tunnelRemoteAddress: host?.isEmpty == false ? host! : "127.0.0.1"
+        )
+        network.mtu = NSNumber(value: mtu)
+
+        let ipv4 = NEIPv4Settings(
+            addresses: ["198.18.0.1"],
+            subnetMasks: ["255.255.0.0"]
+        )
+        ipv4.includedRoutes = [NEIPv4Route.default()]
+        ipv4.excludedRoutes = [
             NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
         ]
-        network.dnsSettings = NEDNSSettings(servers: ["198.18.0.2"])
-        network.dnsSettings?.matchDomains = [""]
+        network.ipv4Settings = ipv4
+
+        let dns = NEDNSSettings(servers: ["198.18.0.2"])
+        dns.matchDomains = [""]
+        network.dnsSettings = dns
 
         settings = network
         setTunnelNetworkSettings(network) { [weak self] error in
-            guard let self else { return completionHandler(error) }
+            guard let self else {
+                completionHandler(error)
+                return
+            }
             if let error {
                 completionHandler(error)
                 return
@@ -37,8 +49,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
             self.packetReadActive = true
             self.readPackets()
-            self.startControlProbe(host: upstreamHost ?? "127.0.0.1", port: upstreamPort)
-            self.osLog("Network Extension configured; HEV bridge is not embedded yet")
+            self.startControlProbe(host: host ?? "127.0.0.1", port: port)
+
+            // This provider now owns the system route, but intentionally does not
+            // claim packet forwarding until the native HEV adapter is linked.
+            // Dropping packets prevents accidental clear-net fallback.
+            self.log("Tunnel network settings installed; native HEV dataplane pending")
             completionHandler(nil)
         }
     }
@@ -47,46 +63,32 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                              completionHandler: @escaping () -> Void) {
         stopped = true
         packetReadActive = false
-        hevActive = false
         controlConnection?.cancel()
         controlConnection = nil
         completionHandler()
     }
 
-    override func handleAppMessage(_ messageData: Data,
-                                   completionHandler: ((Data?) -> Void)? = nil) {
-        // Reserved for future control-plane messages from the containing app.
-        completionHandler?(Data("ok".utf8))
-    }
-
     private func readPackets() {
         guard !stopped, packetReadActive else { return }
-        packetFlow.readPackets { [weak self] packets, protocols in
+        packetFlow.readPackets { [weak self] packets, _ in
             guard let self, !self.stopped, self.packetReadActive else { return }
-
-            // The packet flow is intentionally drained continuously. The actual
-            // packet-to-SOCKS dataplane is provided by the HEV bridge added in
-            // the next integration stage, so packets are not reinjected here.
             if !packets.isEmpty {
-                self.osLog("received \(packets.count) packet(s) before dataplane bridge")
+                self.log("received \(packets.count) packet(s); no dataplane bridge linked")
             }
             self.readPackets()
         }
     }
 
     private func startControlProbe(host: String, port: Int) {
-        guard !stopped else { return }
-        let connection = NWConnection(host: NWEndpoint.Host(host),
-                                      port: NWEndpoint.Port(rawValue: UInt16(max(1, min(port, 65535))))!,
-                                      using: .tcp)
+        guard !stopped, let p = NWEndpoint.Port(rawValue: UInt16(clamping: port)) else { return }
+        let connection = NWConnection(host: NWEndpoint.Host(host), port: p, using: .tcp)
         controlConnection = connection
         connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
             switch state {
-            case .failed(let error):
-                self.osLog("upstream probe failed: \(error.localizedDescription)")
             case .ready:
-                self.osLog("upstream control connection ready")
+                self?.log("upstream control connection ready")
+            case .failed(let error):
+                self?.log("upstream probe failed: \(error.localizedDescription)")
             default:
                 break
             }
@@ -94,7 +96,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         connection.start(queue: .global(qos: .userInitiated))
     }
 
-    private func osLog(_ message: String) {
+    private func log(_ message: String) {
         NSLog("[AetherPacketTunnel] %@", message)
     }
 }

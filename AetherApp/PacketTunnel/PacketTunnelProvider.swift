@@ -117,14 +117,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             subnetMasks: ["255.255.0.0"]
         )
         ipv4.includedRoutes = [NEIPv4Route.default()]
-        ipv4.excludedRoutes = [
+        var excludedIPv4 = [
             NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
         ]
         for ip in bypassIPs where !ip.contains(":") {
-            ipv4.excludedRoutes.append(
+            excludedIPv4.append(
                 NEIPv4Route(destinationAddress: ip, subnetMask: "255.255.255.255")
             )
         }
+        ipv4.excludedRoutes = excludedIPv4
         network.ipv4Settings = ipv4
 
         let ipv6 = NEIPv6Settings(
@@ -132,14 +133,15 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             networkPrefixLengths: [64]
         )
         ipv6.includedRoutes = [NEIPv6Route.default()]
-        ipv6.excludedRoutes = [
+        var excludedIPv6 = [
             NEIPv6Route(destinationAddress: "fd00::", networkPrefixLength: 64)
         ]
         for ip in bypassIPs where ip.contains(":") {
-            ipv6.excludedRoutes.append(
+            excludedIPv6.append(
                 NEIPv6Route(destinationAddress: ip, networkPrefixLength: 128)
             )
         }
+        ipv6.excludedRoutes = excludedIPv6
         network.ipv6Settings = ipv6
 
         let dns = NEDNSSettings(servers: ["198.18.0.2"])

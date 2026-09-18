@@ -126,6 +126,7 @@ final class AetherManager {
             self?.queue.async {
                 guard let self else { return }
                 self.process = nil
+                self.stopSystemTunnel()
                 if proc.terminationStatus != 0 {
                     self.setState(.error("aether exited with code \(proc.terminationStatus)"))
                 } else {
@@ -198,6 +199,7 @@ final class AetherManager {
             queue.asyncAfter(deadline: .now() + 0.7) { [weak self, weak p] in
                 guard let self, let p, p.isRunning, self.process === p else { return }
                 self.setState(.connected)
+                self.startSystemTunnel()
                 if self.settings.systemProxy {
                     ProxyManager.shared.enable(socks: self.settings.socksPort)
                 }
@@ -214,7 +216,9 @@ final class AetherManager {
         let host = "127.0.0.1"
         let port = settings.socksPort
         DispatchQueue.main.async {
-            PacketTunnelManager.shared.start(upstreamHost: host, upstreamPort: port, mtu: 1320)
+            Task {
+                await PacketTunnelManager.shared.start(upstreamHost: host, upstreamPort: port, mtu: 1320)
+            }
         }
     }
 
@@ -229,6 +233,7 @@ final class AetherManager {
             self.process?.terminationHandler = nil
             self.process?.terminate()
             self.process = nil
+            self.stopSystemTunnel()
             self.setState(.idle)
             ProxyManager.shared.disable()
         }
@@ -270,6 +275,7 @@ final class AetherManager {
         let l = line.lowercased()
         if l.contains("tunnel validated") || (l.contains("socks5") && l.contains("available")) {
             setState(.connected)
+            startSystemTunnel()
             if settings.systemProxy {
                 ProxyManager.shared.enable(socks: settings.socksPort)
             }

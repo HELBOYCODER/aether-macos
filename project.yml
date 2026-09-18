@@ -2,6 +2,7 @@ name: AetherApp
 options:
   bundleIdPrefix: com.cluvex.aether
   createIntermediateGroups: true
+
 targets:
   AetherApp:
     type: application
@@ -16,6 +17,9 @@ targets:
           - "*.plist"
           - "*.mac"
           - "Assets.xcassets"
+    dependencies:
+      - target: AetherPacketTunnel
+        embed: true
     info:
       path: AetherApp/Resources/Info.plist
     settings:
@@ -29,3 +33,20 @@ targets:
         COMBINE_HIDPI_IMAGES: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         RUN_DOCUMENTATION_COMPILER: false
+
+  AetherPacketTunnel:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: AetherApp/PacketTunnel
+    info:
+      path: AetherApp/PacketTunnel/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.cluvex.aether.PacketTunnel
+        CODE_SIGN_ENTITLEMENTS: AetherApp/PacketTunnel/entitlements.mac
+        INFOPLIST_FILE: AetherApp/PacketTunnel/Info.plist
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        SKIP_INSTALL: true

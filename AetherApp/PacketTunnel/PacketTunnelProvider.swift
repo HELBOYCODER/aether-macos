@@ -118,16 +118,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 } else {
                     family = packet.first.map { (($0 >> 4) == 6) ? UInt32(AF_INET6) : UInt32(AF_INET) } ?? UInt32(AF_INET)
                 }
+                var frame = Data()
                 var netFamily = family.bigEndian
-                let ok = packet.withUnsafeBytes { raw -> Bool in
-                    guard let base = raw.baseAddress else { return false }
-                    var iov = [iovec(iov_base: &netFamily, iov_len: MemoryLayout<UInt32>.size),
-                               iovec(iov_base: UnsafeMutableRawPointer(mutating: base), iov_len: raw.count)]
-                    return withUnsafeMutablePointer(to: &iov[0]) { first in
-                        sendmsg(self.hevFD, first, 0) >= 0
-                    }
+                withUnsafeBytes(of: &netFamily) { frame.append(contentsOf: $0) }
+                frame.append(packet)
+                let sent = frame.withUnsafeBytes { raw -> Int in
+                    guard let base = raw.baseAddress else { return -1 }
+                    return send(self.hevFD, base, raw.count, 0)
                 }
-                if !ok { self.log("HEV packet send failed: \(String(cString: strerror(errno)))") }
+                if sent != frame.count {
+                    self.log("HEV packet send failed: \(String(cString: strerror(errno)))")
+                }
             }
             self.readPackets()
         }

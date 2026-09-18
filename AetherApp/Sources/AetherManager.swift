@@ -208,6 +208,22 @@ final class AetherManager {
         }
     }
 
+
+    /// Starts the macOS Network Extension tunnel around the Aether local SOCKS endpoint.
+    func startSystemTunnel() {
+        let host = "127.0.0.1"
+        let port = settings.socksPort
+        DispatchQueue.main.async {
+            PacketTunnelManager.shared.start(upstreamHost: host, upstreamPort: port, mtu: 1320)
+        }
+    }
+
+    func stopSystemTunnel() {
+        DispatchQueue.main.async {
+            PacketTunnelManager.shared.stop()
+        }
+    }
+
     func stop() {
         queue.async {
             self.process?.terminationHandler = nil

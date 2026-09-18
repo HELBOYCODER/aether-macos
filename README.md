@@ -1,37 +1,52 @@
-# Aether برای macOS (اپ منوبار)
+# Aether for macOS (menu bar app)
 
-یک رپر بومی SwiftUI دور CLI کلاینت [Aether](https://github.com/CluvexStudio/Aether).
-فقط در منوبار زندگی می‌کند — بدون آیکون در Dock. با یک کلیک وصل شو، پروتکل و حالت اسکن را انتخاب کن، پروکسی سیستم را روشن کن و لاگ زنده را تماشا کن.
+یک رپر بومی SwiftUI برای macOS که دو حالت اتصال دارد:
+
+- Aether CLI با حالت‌های MASQUE / WireGuard / WARP-in-WARP
+- SSH tunnel با OpenSSH Dynamic Forwarding
 
 ## ✨ امکانات
 
-- آیتم وضعیت در منوبار با اتصال/قطع و رنگ حالتِ زنده
-- انتخاب پروتکل: MASQUE / WireGuard / WARP-in-WARP (`gool`)
-- حالت اسکن: turbo / balanced / thorough / stealth / ironclad
-- مبهم‌سازی (Obfuscation): خاموش / سبک / متوسط / تهاجمی
-- پروکسی SOCKS سراسری اختیاری از طریق `networksetup` (فقط روی `127.0.0.1` — هرگز `0.0.0.0`)
-- پنجره لاگ زنده + پنل تنظیمات (ذخیره‌شده در UserDefaults)
-- باینری `aether` نسخه v1.6.0 در زمان بیلد دانلود می‌شود؛ هیچ دانلودی در زمان اجرا انجام نمی‌شود
+- آیتم وضعیت در منوبار با اتصال/قطع و وضعیت زنده
+- انتخاب حالت اتصال بین Aether و SSH
+- برای SSH: هاست، کاربر، پورت و فایل کلید خصوصی از داخل GUI
+- ساخت SOCKS5 فقط روی \`127.0.0.1\`
+- اختیاری: فعال‌کردن System SOCKS Proxy روی سرویس شبکه فعال
+- پنجره لاگ زنده + پنل تنظیمات
+- اجرای خودکار هنگام ورود به سیستم
+- هیچ رمز عبور SSH در اپ ذخیره یا جمع‌آوری نمی‌شود؛ حالت SSH از key/ssh-agent استفاده می‌کند و \`BatchMode=yes\` دارد
 
-## 🔒 نکات امنیتی
+## 🔐 SSH mode
 
-- شنونده SOCKS5 همیشه داخل رپر باندل به `127.0.0.1` محدود است.
-- پروکسی سیستم، وقتی فعال شود، فقط روی سرویس فعال Wi-Fi/Ethernet اعمال می‌شود و به `127.0.0.1` اشاره می‌کند — تونل هرگز در شبکه محلی (LAN) در دسترس قرار نمی‌گیرد.
-- بدون root، بدون kext یا درایور شبکه؛ همه‌چیز در نشست کاربر اجرا می‌شود.
-- باینری `aether` از ریلیز رسمی گیت‌هاب (نسخه پین‌شده) دریافت و با امضای ad-hoc / Developer-ID همراه `entitlements.mac` امضا می‌شود.
+حالت SSH یک VPN لایه‌۳ کامل نیست. این حالت از \`ssh -N -D 127.0.0.1:<port>\` استفاده می‌کند و یک SOCKS5 tunnel می‌سازد. با روشن‌کردن گزینه System Proxy، برنامه از \`networksetup\` برای اشاره‌دادن proxy سیستم به همان loopback استفاده می‌کند.
 
-## 🛠 بیلد (با GitHub Actions — بدون نیاز به ابزار محلی)
+برای اتصال:
 
-1. این مخزن را فورک کن یا روی یک مخزن عمومی گیت‌هاب پوش کن.
-2. ورک‌فلو `Build macOS .dmg` روی `macos-latest` اجرا می‌شود، باینری `aether` پین‌شده را دانلود می‌کند، اپ را می‌سازد، امضا می‌کند (ad-hoc مگر اینکه Secret اضافه کنی) و خروجی `Aether.dmg` + `AetherApp.app` را به‌صورت Artifact با ۹۰ روز اعتبار آپلود می‌کند.
-3. اختیاری: برای بیلد Notarized و بدون مزاحمت Gatekeeper، این Secret ها را اضافه کن:
-   `MACOS_SIGN_IDENTITY` ، `APPLE_API_KEY` ، `APPLE_KEY_ID` ، `APPLE_ISSUER_ID`
+1. در منوبار، **Connection → SSH tunnel** را انتخاب کنید.
+2. در Settings، Host و User را وارد کنید.
+3. در صورت نیاز فایل private key را انتخاب کنید، یا از ssh-agent استفاده کنید.
+4. Connect را بزنید.
+5. در صورت نیاز **Set system proxy** را فعال کنید.
+
+نکته: اولین اتصال به یک host جدید از سیاست استاندارد OpenSSH برای \`known_hosts\` استفاده می‌کند. اگر کلید میزبان تغییر کرده باشد، OpenSSH طبق تنظیمات محلی خودش اتصال را متوقف می‌کند.
+
+## 🛠 بیلد
+
+GitHub Actions برای هر دو معماری macOS یک DMG جدا می‌سازد:
+
+- Apple Silicon / arm64
+- Intel / x86_64
+
+باینری Aether از release رسمی نسخه v1.6.0 با SHA-256 بررسی می‌شود. حالت SSH به OpenSSH موجود در خود macOS متکی است و باینری جداگانه‌ای برای آن داخل اپ قرار نمی‌گیرد.
+
+پس از push به \`main\`، workflow به صورت خودکار اجرا می‌شود و DMGها را در **Actions → Artifacts** منتشر می‌کند. workflow همچنین با \`workflow_dispatch\` قابل اجرای دستی است.
 
 ## 📦 نصب
 
-فایل `Aether.dmg` را از مسیر **Actions ← Artifacts** دانلود کن، بازش کن و `AetherApp.app` را بکش داخل Applications.
-در بیلدهای ad-hoc، بار اول روی اپ راست‌کلیک کن و **Open** را بزن.
+فایل DMG معماری مناسب را از GitHub Actions دانلود کنید، آن را باز کنید و \`AetherApp.app\` را به Applications بکشید.
+
+در buildهای ad-hoc ممکن است macOS در اولین اجرا هشدار امنیتی بدهد. برای signing و notarization واقعی می‌توانید secretهای Apple را در repository اضافه کنید.
 
 ## 📄 لایسنس
 
-رپر اپلیکیشن: MIT — باینری `aether`: AGPL-3.0 (کلاینت WARP کلودفلر).
+رپر اپلیکیشن: MIT — باینری \`aether\`: AGPL-3.0

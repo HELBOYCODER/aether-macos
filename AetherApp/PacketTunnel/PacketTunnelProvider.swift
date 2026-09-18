@@ -3,6 +3,7 @@ import NetworkExtension
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private var settings: NEPacketTunnelNetworkSettings?
+    private var packetBridge: AetherPacketBridge?
     private var stopped = false
     private var hevRunning = false
     private var bypassIPs: [String] = []
@@ -17,40 +18,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let socksPort = (config["socksPort"] as? Int) ?? 1819
         let mtu = max(576, min((config["mtu"] as? Int) ?? 1320, 9000))
 
-        let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-        network.mtu = NSNumber(value: mtu)
+        let network = makeNetworkSettings(mtu: mtu)
 
-        let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
-        ipv4.includedRoutes = [NEIPv4Route.default()]
-        ipv4.excludedRoutes = [
-            NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
-        ]
-        ipv4.excludedRoutes = [
-            NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
-        ]
-        for ip in bypassIPs where !ip.contains(":") {
-            ipv4.excludedRoutes.append(
-                NEIPv4Route(destinationAddress: ip, subnetMask: "255.255.255.255")
-            )
-        }
-        network.ipv4Settings = ipv4
-
-        let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [64])
-        ipv6.includedRoutes = [NEIPv6Route.default()]
-        ipv6.excludedRoutes = [
-            NEIPv6Route(destinationAddress: "fd00::", networkPrefixLength: 64)
-        ]
-        for ip in bypassIPs where ip.contains(":") {
-            ipv6.excludedRoutes.append(
-                NEIPv6Route(destinationAddress: ip, networkPrefixLength: 128)
-            )
-        }
-        network.ipv6Settings = ipv6
-
-        let dns = NEDNSSettings(servers: ["198.18.0.2"])
-        dns.matchDomains = [""]
-        network.dnsSettings = dns
-
+        settings = network
         setTunnelNetworkSettings(network) { [weak self] error in
             guard let self else {
                 completionHandler(error)
@@ -61,36 +31,50 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 return
             }
 
-            guard let tunFD = UtunFileDescriptor.from(packetFlow: self.packetFlow) else {
-                completionHandler(NSError(
-                    domain: "AetherPacketTunnel",
-                    code: 1001,
-                    userInfo: [NSLocalizedDescriptionKey: "Unable to resolve Network Extension utun file descriptor"]
-                ))
-                return
-            }
+            do {
+                let bridge = try AetherPacketBridge(
+                    flow: self.packetFlow,
+                    mtu: mtu,
+                    failure: { [weak self] in
+                        self?.log("packet bridge failed")
+                        self?.cancelTunnelWithError(NSError(
+                            domain: "AetherPacketTunnel",
+                            code: 1003,
+                            userInfo: [NSLocalizedDescriptionKey: "Packet bridge stopped"]
+                        ))
+                    }
+                )
+                self.packetBridge = bridge
 
-            let hevConfig = self.makeHEVConfig(
-                socksHost: socksHost,
-                socksPort: socksPort,
-                mtu: mtu
-            )
+                let hevConfig = self.makeHEVConfig(
+                    socksHost: socksHost,
+                    socksPort: socksPort,
+                    mtu: mtu
+                )
 
-            let result = hevConfig.withCString { ptr in
-                aether_hev_start(ptr, hevConfig.utf8.count, tunFD)
-            }
-            guard result == 0 else {
-                completionHandler(NSError(
-                    domain: "AetherPacketTunnel",
-                    code: 1002,
-                    userInfo: [NSLocalizedDescriptionKey: "Unable to start HEV dataplane"]
-                ))
-                return
-            }
+                let result = hevConfig.withCString { ptr in
+                    aether_hev_start(ptr, hevConfig.utf8.count, bridge.workerFD)
+                }
 
-            self.hevRunning = true
-            self.log("HEV started on Network Extension utun fd \(tunFD)")
-            completionHandler(nil)
+                guard result == 0 else {
+                    bridge.shutdown(afterHEVStopped: true)
+                    self.packetBridge = nil
+                    throw NSError(
+                        domain: "AetherPacketTunnel",
+                        code: 1002,
+                        userInfo: [NSLocalizedDescriptionKey: "Unable to start HEV dataplane"]
+                    )
+                }
+
+                bridge.start()
+                self.hevRunning = true
+                self.log("HEV dataplane started on public packetFlow bridge")
+                completionHandler(nil)
+            } catch {
+                self.packetBridge?.shutdown(afterHEVStopped: true)
+                self.packetBridge = nil
+                completionHandler(error)
+            }
         }
     }
 
@@ -106,16 +90,32 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         bypassIPs = Array(Set(ips.filter { !$0.isEmpty })).sorted()
-        applyNetworkSettings()
+        if let mtu = settings?.mtu?.intValue {
+            applyNetworkSettings(mtu: mtu)
+        }
         completionHandler?(Data("ok".utf8))
     }
 
-    private func applyNetworkSettings() {
-        guard !stopped else { return }
-        let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
-        network.mtu = settings?.mtu
+    override func stopTunnel(with reason: NEProviderStopReason,
+                             completionHandler: @escaping () -> Void) {
+        stopped = true
+        if hevRunning {
+            aether_hev_stop()
+            hevRunning = false
+        }
+        packetBridge?.shutdown(afterHEVStopped: true)
+        packetBridge = nil
+        completionHandler()
+    }
 
-        let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.0.0"])
+    private func makeNetworkSettings(mtu: Int) -> NEPacketTunnelNetworkSettings {
+        let network = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "127.0.0.1")
+        network.mtu = NSNumber(value: mtu)
+
+        let ipv4 = NEIPv4Settings(
+            addresses: ["198.18.0.1"],
+            subnetMasks: ["255.255.0.0"]
+        )
         ipv4.includedRoutes = [NEIPv4Route.default()]
         ipv4.excludedRoutes = [
             NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")
@@ -127,7 +127,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         network.ipv4Settings = ipv4
 
-        let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [64])
+        let ipv6 = NEIPv6Settings(
+            addresses: ["fd00::1"],
+            networkPrefixLengths: [64]
+        )
         ipv6.includedRoutes = [NEIPv6Route.default()]
         ipv6.excludedRoutes = [
             NEIPv6Route(destinationAddress: "fd00::", networkPrefixLength: 64)
@@ -142,22 +145,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let dns = NEDNSSettings(servers: ["198.18.0.2"])
         dns.matchDomains = [""]
         network.dnsSettings = dns
+        return network
+    }
 
+    private func applyNetworkSettings(mtu: Int) {
+        guard !stopped else { return }
+        let network = makeNetworkSettings(mtu: mtu)
+        settings = network
         setTunnelNetworkSettings(network) { [weak self] error in
             if let error {
                 self?.log("failed to update bypass routes: \(error.localizedDescription)")
             }
         }
-    }
-
-    override func stopTunnel(with reason: NEProviderStopReason,
-                             completionHandler: @escaping () -> Void) {
-        stopped = true
-        if hevRunning {
-            aether_hev_stop()
-            hevRunning = false
-        }
-        completionHandler()
     }
 
     private func makeHEVConfig(socksHost: String, socksPort: Int, mtu: Int) -> String {
@@ -166,6 +165,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\r", with: "")
         let port = max(1, min(socksPort, 65535))
+
         return """
         tunnel:
           mtu: \(mtu)
@@ -195,17 +195,5 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private func log(_ message: String) {
         NSLog("[AetherPacketTunnel] %@", message)
-    }
-}
-
-private enum UtunFileDescriptor {
-    static func from(packetFlow: NEPacketTunnelFlow) -> Int32? {
-        if let fd = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
-            return fd
-        }
-        if let number = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? NSNumber {
-            return number.int32Value
-        }
-        return nil
     }
 }

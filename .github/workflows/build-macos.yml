@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev-socks5-tunnel
+          git clone --depth 1 --recurse-submodules https://github.com/heiher/hev-socks5-tunnel.git /tmp/hev-socks5-tunnel
           cd /tmp/hev-socks5-tunnel
           ./build-apple.sh
           test -f HevSocks5Tunnel.xcframework/macosx-x86_64-arm64/libhev-socks5-tunnel.a || true

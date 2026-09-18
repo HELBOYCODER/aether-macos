@@ -19,9 +19,7 @@ struct hev_start_args {
 
 static void *hev_thread_main(void *opaque) {
     struct hev_start_args *args = opaque;
-    int rc = hev_socks5_tunnel_main_from_str(
-        args->config, args->length, args->tun_fd
-    );
+    int rc = hev_socks5_tunnel_main_from_str(args->config, args->length, args->tun_fd);
     free(args->config);
     free(args);
     atomic_store(&g_running, 0);

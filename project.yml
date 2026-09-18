@@ -53,3 +53,5 @@ targets:
         OTHER_CFLAGS: "-I$(SRCROOT)/AetherApp/PacketTunnel"
         HEADER_SEARCH_PATHS: "$(SRCROOT)/AetherApp/PacketTunnel"
         OTHER_LDFLAGS: "-lHevSocks5Tunnel"
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/AetherApp/PacketTunnel/Frameworks"
+        LIBRARY_SEARCH_PATHS: "$(SRCROOT)/AetherApp/PacketTunnel/Frameworks/HevSocks5Tunnel.xcframework/macosx-x86_64-arm64"

@@ -9,6 +9,7 @@ final class PacketTunnelManager: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private var manager: NETunnelProviderManager?
+    private var statusObserver: NSObjectProtocol?
 
     private init() {}
 
@@ -23,12 +24,15 @@ final class PacketTunnelManager: ObservableObject {
                 proto.providerConfiguration = [
                     "upstreamHost": "127.0.0.1",
                     "upstreamPort": 1819,
-                    "mtu": 1280
+                    "mtu": 1320,
+                "socksHost": "127.0.0.1",
+                "socksPort": AetherManager.shared.settings.socksPort
                 ]
                 selected.protocolConfiguration = proto
                 selected.localizedDescription = "Aether"
                 selected.isEnabled = true
                 manager = selected
+            installStatusObserver(for: selected)
                 try await selected.saveToPreferences()
                 try await selected.loadFromPreferences()
             } else {
@@ -36,12 +40,13 @@ final class PacketTunnelManager: ObservableObject {
             }
 
             status = selected.connection.status
+            installStatusObserver(for: selected)
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    func start(upstreamHost: String, upstreamPort: Int) async {
+    func start(upstreamHost: String, upstreamPort: Int, mtu: Int = 1320) async {
         do {
             if manager == nil { await load() }
             guard let manager else { throw NSError(domain: "Aether", code: 1, userInfo: [NSLocalizedDescriptionKey: "VPN configuration unavailable"]) }
@@ -51,16 +56,34 @@ final class PacketTunnelManager: ObservableObject {
             proto.providerConfiguration = [
                 "upstreamHost": upstreamHost,
                 "upstreamPort": upstreamPort,
-                "mtu": 1280
+                "mtu": max(576, min(mtu, 9000)),
+                "socksHost": "127.0.0.1",
+                "socksPort": AetherManager.shared.settings.socksPort
             ]
             manager.protocolConfiguration = proto
             manager.isEnabled = true
             try await manager.saveToPreferences()
             try await manager.loadFromPreferences()
+            installStatusObserver(for: manager)
             try manager.connection.startVPNTunnel()
             status = manager.connection.status
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    private func installStatusObserver(for manager: NETunnelProviderManager) {
+        if let statusObserver {
+            NotificationCenter.default.removeObserver(statusObserver)
+        }
+        statusObserver = NotificationCenter.default.addObserver(
+            forName: .NEVPNStatusDidChange,
+            object: manager.connection,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let connection = notification.object as? NEVPNConnection else { return }
+            self.status = connection.status
         }
     }
 

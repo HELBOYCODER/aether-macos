@@ -30,7 +30,8 @@ final class PacketTunnelManager: ObservableObject {
                     "upstreamPort": AetherManager.shared.settings.socksPort,
                     "mtu": 1320,
                     "socksHost": "127.0.0.1",
-                    "socksPort": AetherManager.shared.settings.socksPort
+                    "socksPort": AetherManager.shared.settings.socksPort,
+                    "bypassIPs": []
                 ]
                 selected.protocolConfiguration = proto
                 selected.localizedDescription = "Aether"
@@ -75,7 +76,8 @@ final class PacketTunnelManager: ObservableObject {
                 "upstreamPort": upstreamPort,
                 "mtu": max(576, min(mtu, 9000)),
                 "socksHost": "127.0.0.1",
-                "socksPort": AetherManager.shared.settings.socksPort
+                "socksPort": AetherManager.shared.settings.socksPort,
+                "bypassIPs": []
             ]
 
             manager.protocolConfiguration = proto
@@ -108,6 +110,25 @@ final class PacketTunnelManager: ObservableObject {
             guard let self,
                   let connection = notification.object as? NEVPNConnection else { return }
             self.status = connection.status
+        }
+    }
+
+    func updateBypassIPs(_ ips: [String]) {
+        guard let session = manager?.connection as? NETunnelProviderSession else { return }
+        guard session.status == .connected else { return }
+
+        let clean = Array(Set(ips.filter {
+            !$0.isEmpty && !$0.hasPrefix("127.") && $0 != "::1" && $0 != "0.0.0.0"
+        })).sorted()
+
+        guard let data = try? JSONSerialization.data(
+            withJSONObject: ["type": "bypassIPs", "ips": clean]
+        ) else { return }
+
+        do {
+            try session.sendProviderMessage(data, responseHandler: nil)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

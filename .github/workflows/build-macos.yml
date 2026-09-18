@@ -138,7 +138,7 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Read version and detect version bump
+      - name: Read version
         id: version
         shell: bash
         run: |
@@ -149,22 +149,14 @@ jobs:
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "needed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "needed=true" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Download build artifacts
-        if: steps.version.outputs.needed == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: Aether-macOS-*
           path: dist
           merge-multiple: false
 
-      - name: Create GitHub release
-        if: steps.version.outputs.changed == 'true'
+      - name: Publish versioned GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -173,7 +165,11 @@ jobs:
           mapfile -t DMGS < <(find dist -type f -name '*.dmg' | sort)
           test "${#DMGS[@]}" -eq 2
 
-          gh release create "v$VERSION" "${DMGS[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Aether macOS v$VERSION" \
-            --generate-notes
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists; leaving it unchanged."
+          else
+            gh release create "v$VERSION" "${DMGS[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Aether macOS v$VERSION" \
+              --generate-notes
+          fi

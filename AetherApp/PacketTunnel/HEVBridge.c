@@ -10,6 +10,7 @@ extern void hev_socks5_tunnel_quit(void);
 
 static pthread_t g_thread;
 static _Atomic int g_running = 0;
+static _Atomic int g_thread_created = 0;
 
 struct hev_start_args {
     unsigned char *config;
@@ -53,11 +54,15 @@ int aether_hev_start(const char *config, size_t config_len, int tun_fd) {
         return -1;
     }
 
+    atomic_store(&g_thread_created, 1);
     return 0;
 }
 
 void aether_hev_stop(void) {
-    if (!atomic_load(&g_running)) return;
-    hev_socks5_tunnel_quit();
+    if (!atomic_load(&g_thread_created)) return;
+    if (atomic_load(&g_running)) {
+        hev_socks5_tunnel_quit();
+    }
     pthread_join(g_thread, NULL);
+    atomic_store(&g_thread_created, 0);
 }

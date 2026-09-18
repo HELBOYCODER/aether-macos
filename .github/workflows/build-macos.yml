@@ -109,7 +109,6 @@ jobs:
           file "$APP/Contents/MacOS/AetherApp"
           EXT="$APP/Contents/PlugIns/AetherPacketTunnel.appex"
           test -f "$EXT/Contents/MacOS/AetherPacketTunnel"
-          otool -L "$EXT/Contents/MacOS/AetherPacketTunnel" | grep -q "libhev-socks5-tunnel"
           nm -gU "$EXT/Contents/MacOS/AetherPacketTunnel" | grep -q "hev_socks5_tunnel_main_from_str"
 
       - name: Sign

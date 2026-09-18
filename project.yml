@@ -48,6 +48,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: AetherApp/PacketTunnel/entitlements.mac
         INFOPLIST_FILE: AetherApp/PacketTunnel/Info.plist
         SWIFT_VERSION: "5.9"
+        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/AetherApp/PacketTunnel/HEVBridge.h"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SKIP_INSTALL: true
         OTHER_CFLAGS: "-I$(SRCROOT)/AetherApp/PacketTunnel"

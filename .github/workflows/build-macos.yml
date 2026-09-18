@@ -1,4 +1,4 @@
-name: Build macOS DMGs
+name: Build and release macOS DMGs
 
 on:
   workflow_dispatch:
@@ -46,8 +46,10 @@ jobs:
           AETHER_ASSET: ${{ matrix.aether_asset }}
         run: |
           mkdir -p AetherApp/Resources/aether_app_bin
-          curl -fsSL -o aether.tar.gz             "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
-          curl -fsSL -o aether.sha256             "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
+          curl -fsSL -o aether.tar.gz \
+            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
+          curl -fsSL -o aether.sha256 \
+            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
 
           expected="$(awk '{print $1}' aether.sha256)"
           actual="$(shasum -a 256 aether.tar.gz | awk '{print $1}')"
@@ -63,7 +65,15 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild             -project AetherApp.xcodeproj             -scheme AetherApp             -configuration Release             -derivedDataPath build             ONLY_ACTIVE_ARCH=YES             CODE_SIGN_IDENTITY=""             CODE_SIGNING_REQUIRED=NO             build
+          xcodebuild \
+            -project AetherApp.xcodeproj \
+            -scheme AetherApp \
+            -configuration Release \
+            -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            build
 
       - name: Locate built app
         id: app
@@ -81,9 +91,13 @@ jobs:
         run: |
           APP="${{ steps.app.outputs.path }}"
           if [ -n "$DEV_ID" ]; then
-            codesign --force --deep --options runtime               --entitlements AetherApp/Resources/entitlements.mac               --sign "$DEV_ID" "$APP"
+            codesign --force --deep --options runtime \
+              --entitlements AetherApp/Resources/entitlements.mac \
+              --sign "$DEV_ID" "$APP"
           else
-            codesign --force --deep --options runtime               --entitlements AetherApp/Resources/entitlements.mac               -s - "$APP"
+            codesign --force --deep --options runtime \
+              --entitlements AetherApp/Resources/entitlements.mac \
+              -s - "$APP"
           fi
           codesign --verify --deep --strict "$APP"
 
@@ -92,9 +106,16 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           APP="${{ steps.app.outputs.path }}"
-          create-dmg             --volname "Aether"             --window-pos 200 120             --window-size 500 300             --icon "AetherApp.app" 125 135             --hide-extension "AetherApp.app"             --app-drop-link 375 135             "Aether-$ARCH.dmg" "$APP"
+          create-dmg \
+            --volname "Aether" \
+            --window-pos 200 120 \
+            --window-size 500 300 \
+            --icon "AetherApp.app" 125 135 \
+            --hide-extension "AetherApp.app" \
+            --app-drop-link 375 135 \
+            "Aether-$ARCH.dmg" "$APP"
 
-      - name: Upload artifacts
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Aether-macOS-${{ matrix.arch }}
@@ -103,8 +124,56 @@ jobs:
             ${{ steps.app.outputs.path }}
           retention-days: 90
 
-      - name: Draft release on tag
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  release:
+    name: Publish release
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          files: Aether-${{ matrix.arch }}.dmg
+          fetch-depth: 2
+
+      - name: Read version and detect version bump
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' AetherApp/Resources/Info.plist 2>/dev/null || true)"
+          if [ -z "$VERSION" ]; then
+            VERSION="$(grep -A1 'CFBundleShortVersionString' AetherApp/Resources/Info.plist | tail -n1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/')"
+          fi
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          if git diff --quiet HEAD^ HEAD -- AetherApp/Resources/Info.plist; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download build artifacts
+        if: steps.version.outputs.changed == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Aether-macOS-*
+          path: dist
+          merge-multiple: false
+
+      - name: Create GitHub release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          mapfile -t DMGS < <(find dist -type f -name '*.dmg' | sort)
+          test "${#DMGS[@]}" -eq 2
+
+          gh release create "v$VERSION" "${DMGS[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Aether macOS v$VERSION" \
+            --generate-notes

@@ -65,6 +65,8 @@ final class AetherManager {
     private var logLines: [String] = []
     private let logLimit = 2000
     private let queue = DispatchQueue(label: "aether.manager")
+    private var endpointBypassTimer: DispatchSourceTimer?
+    private var lastEndpointIPs: [String] = []
 
     var onStateChange: (() -> Void)?
     var onLog: ((String) -> Void)?
@@ -127,6 +129,7 @@ final class AetherManager {
                 guard let self else { return }
                 self.process = nil
                 self.stopSystemTunnel()
+                self.stopEndpointBypassMonitor()
                 if proc.terminationStatus != 0 {
                     self.setState(.error("aether exited with code \(proc.terminationStatus)"))
                 } else {
@@ -183,6 +186,7 @@ final class AetherManager {
                 guard let self else { return }
                 self.process = nil
                 self.stopSystemTunnel()
+                self.stopEndpointBypassMonitor()
                 if proc.terminationStatus != 0 {
                     self.setState(.error("ssh exited with code \(proc.terminationStatus)"))
                 } else {
@@ -201,6 +205,7 @@ final class AetherManager {
                 guard let self, let p, p.isRunning, self.process === p else { return }
                 self.setState(.connected)
                 self.startSystemTunnel()
+                self.startEndpointBypassMonitor()
                 if self.settings.systemProxy {
                     ProxyManager.shared.enable(socks: self.settings.socksPort)
                 }
@@ -235,8 +240,70 @@ final class AetherManager {
             self.process?.terminate()
             self.process = nil
             self.stopSystemTunnel()
+            self.stopEndpointBypassMonitor()
             self.setState(.idle)
             ProxyManager.shared.disable()
+        }
+    }
+
+    private func startEndpointBypassMonitor() {
+        queue.async { [weak self] in
+            guard let self, self.endpointBypassTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now() + 1.0, repeating: 2.0)
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                guard let process = self.process, process.isRunning else { return }
+                let ips = self.collectRemoteIPs(processID: process.processIdentifier)
+                if ips != self.lastEndpointIPs {
+                    self.lastEndpointIPs = ips
+                    DispatchQueue.main.async {
+                        PacketTunnelManager.shared.updateBypassIPs(ips)
+                    }
+                }
+            }
+            self.endpointBypassTimer = timer
+            timer.resume()
+        }
+    }
+
+    private func stopEndpointBypassMonitor() {
+        endpointBypassTimer?.cancel()
+        endpointBypassTimer = nil
+        lastEndpointIPs = []
+    }
+
+    private func collectRemoteIPs(processID: Int32) -> [String] {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-nP", "-a", "-p", String(processID), "-i"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = FileHandle.nullDevice
+        do {
+            try task.run()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            task.waitUntilExit()
+            guard task.terminationStatus == 0,
+                  let text = String(data: data, encoding: .utf8) else {
+                return []
+            }
+
+            let pattern = try NSRegularExpression(
+                pattern: "->(?:\\[([0-9A-Fa-f:]+)\\]|([0-9]{1,3}(?:\\.[0-9]{1,3}){3})):[0-9]+"
+            )
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            var result = Set<String>()
+            for match in pattern.matches(in: text, range: range) {
+                if let a = Range(match.range(at: 1), in: text) {
+                    result.insert(String(text[a]))
+                } else if let a = Range(match.range(at: 2), in: text) {
+                    result.insert(String(text[a]))
+                }
+            }
+            return result.sorted()
+        } catch {
+            return []
         }
     }
 
@@ -277,6 +344,7 @@ final class AetherManager {
         if l.contains("tunnel validated") || (l.contains("socks5") && l.contains("available")) {
             setState(.connected)
             startSystemTunnel()
+            startEndpointBypassMonitor()
             if settings.systemProxy {
                 ProxyManager.shared.enable(socks: settings.socksPort)
             }

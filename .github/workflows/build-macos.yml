@@ -61,6 +61,15 @@ jobs:
           chmod +x AetherApp/Resources/aether
           file AetherApp/Resources/aether
 
+      - name: Verify HEV macOS source availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/immaghzbad/AetherST/main/app/src/main/cpp/third_party/hev-socks5-tunnel/build-apple.sh -o /tmp/hev-build-apple.sh
+          grep -q 'buildStatic macosx x86_64' /tmp/hev-build-apple.sh
+          grep -q 'buildStatic macosx arm64' /tmp/hev-build-apple.sh
+          echo "HEV upstream contains native macOS arm64/x86_64 build targets."
+
       - name: Generate Xcode project
         run: xcodegen generate
 

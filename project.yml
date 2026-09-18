@@ -50,3 +50,6 @@ targets:
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SKIP_INSTALL: true
+        OTHER_CFLAGS: "-I$(SRCROOT)/AetherApp/PacketTunnel"
+        HEADER_SEARCH_PATHS: "$(SRCROOT)/AetherApp/PacketTunnel"
+        OTHER_LDFLAGS: "-lHevSocks5Tunnel"

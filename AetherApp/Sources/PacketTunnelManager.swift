@@ -114,6 +114,9 @@ final class PacketTunnelManager: ObservableObject {
             guard let self,
                   let connection = notification.object as? NEVPNConnection else { return }
             self.status = connection.status
+            if connection.status == .connected, !self.pendingBypassIPs.isEmpty {
+                self.sendBypassIPs(self.pendingBypassIPs)
+            }
         }
     }
 

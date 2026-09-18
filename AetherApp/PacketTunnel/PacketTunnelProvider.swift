@@ -30,6 +30,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         ipv4.excludedRoutes = [NEIPv4Route(destinationAddress: "198.18.0.0", subnetMask: "255.255.0.0")]
         network.ipv4Settings = ipv4
 
+        let ipv6 = NEIPv6Settings(addresses: ["fd00::1"], networkPrefixLengths: [64])
+        ipv6.includedRoutes = [NEIPv6Route.default()]
+        ipv6.excludedRoutes = [
+            NEIPv6Route(destinationAddress: "fd00::", networkPrefixLength: 64)
+        ]
+        network.ipv6Settings = ipv6
+
         let dns = NEDNSSettings(servers: ["198.18.0.2"])
         dns.matchDomains = [""]
         network.dnsSettings = dns

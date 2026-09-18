@@ -127,12 +127,8 @@ jobs:
               --entitlements AetherApp/Resources/entitlements.mac \
               --sign "$DEV_ID" "$APP"
           else
-            codesign --force --options runtime \
-              --entitlements AetherApp/PacketTunnel/entitlements.mac \
-              -s - "$EXT"
-            codesign --force --options runtime \
-              --entitlements AetherApp/Resources/entitlements.mac \
-              -s - "$APP"
+            codesign --force -s - "$EXT"
+            codesign --force --sign - "$APP"
           fi
           codesign --verify --strict "$EXT"
           codesign --verify --deep --strict "$APP"

@@ -17,6 +17,8 @@ targets:
           - "*.plist"
           - "*.mac"
           - "Assets.xcassets"
+          - "aether"
+          - "aether_app_bin/**"
     dependencies:
       - target: AetherPacketTunnel
         embed: true

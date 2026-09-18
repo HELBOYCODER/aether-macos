@@ -129,6 +129,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
 private enum UtunFileDescriptor {
     static func from(packetFlow: NEPacketTunnelFlow) -> Int32? {
-        packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32
+        if let fd = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? Int32 {
+            return fd
+        }
+        if let number = packetFlow.value(forKeyPath: "socket.fileDescriptor") as? NSNumber {
+            return number.int32Value
+        }
+        return nil
     }
 }

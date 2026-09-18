@@ -51,6 +51,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             self.readPackets()
             self.startControlProbe(host: host ?? "127.0.0.1", port: port)
 
+            // HEV is linked into the extension target through HEVBridge.c.
+            // It still needs the actual NEPacketTunnelProvider packet path adapter;
+            // NEPacketTunnelFlow is not a raw BSD TUN descriptor, so passing a
+            // fabricated fd here would be unsafe. Keep the route fail-closed until
+            // that adapter is implemented.
+            self.log("HEV native library linked; packetFlow adapter remains fail-closed")
+
             // This provider now owns the system route, but intentionally does not
             // claim packet forwarding until the native HEV adapter is linked.
             // Dropping packets prevents accidental clear-net fallback.

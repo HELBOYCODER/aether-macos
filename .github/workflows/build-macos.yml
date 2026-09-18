@@ -11,21 +11,25 @@ on:
       - ".github/workflows/build-macos.yml"
       - "README.md"
 
+concurrency:
+  group: aether-macos-build
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: \${{ matrix.arch }}
+    name: ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
             aether_asset: aether-macos-arm64.tar.gz
           - runner: macos-15-intel
             arch: x86_64
             aether_asset: aether-macos-x86_64.tar.gz
 
-    runs-on: \${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
@@ -39,17 +43,15 @@ jobs:
 
       - name: Download and verify bundled Aether binary
         env:
-          AETHER_ASSET: \${{ matrix.aether_asset }}
+          AETHER_ASSET: ${{ matrix.aether_asset }}
         run: |
           mkdir -p AetherApp/Resources/aether_app_bin
-          curl -fsSL -o aether.tar.gz \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
-          curl -fsSL -o aether.sha256 \
-            "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
+          curl -fsSL -o aether.tar.gz             "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET"
+          curl -fsSL -o aether.sha256             "https://github.com/CluvexStudio/Aether/releases/download/v1.6.0/$AETHER_ASSET.sha256"
 
-          expected="\$(awk '{print $1}' aether.sha256)"
-          actual="\$(shasum -a 256 aether.tar.gz | awk '{print $1}')"
-          test "\$expected" = "\$actual"
+          expected="$(awk '{print $1}' aether.sha256)"
+          actual="$(shasum -a 256 aether.tar.gz | awk '{print $1}')"
+          test "$expected" = "$actual"
 
           tar -xzf aether.tar.gz -C AetherApp/Resources/aether_app_bin
           mv AetherApp/Resources/aether_app_bin/aether AetherApp/Resources/aether
@@ -61,67 +63,48 @@ jobs:
 
       - name: Build
         run: |
-          xcodebuild \
-            -project AetherApp.xcodeproj \
-            -scheme AetherApp \
-            -configuration Release \
-            -derivedDataPath build \
-            ONLY_ACTIVE_ARCH=YES \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+          xcodebuild             -project AetherApp.xcodeproj             -scheme AetherApp             -configuration Release             -derivedDataPath build             ONLY_ACTIVE_ARCH=YES             CODE_SIGN_IDENTITY=""             CODE_SIGNING_REQUIRED=NO             build
 
       - name: Locate built app
         id: app
         shell: bash
         run: |
-          APP="\$(find build -name "AetherApp.app" -type d | head -n1)"
-          test -n "\$APP"
-          echo "path=\$APP" >> "\$GITHUB_OUTPUT"
-          echo "Built: \$APP"
-          file "\$APP/Contents/MacOS/AetherApp"
+          APP="$(find build -name "AetherApp.app" -type d | head -n1)"
+          test -n "$APP"
+          echo "path=$APP" >> "$GITHUB_OUTPUT"
+          echo "Built: $APP"
+          file "$APP/Contents/MacOS/AetherApp"
 
       - name: Sign
         env:
-          DEV_ID: \${{ secrets.MACOS_SIGN_IDENTITY }}
+          DEV_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
-          APP="\${{ steps.app.outputs.path }}"
-          if [ -n "\$DEV_ID" ]; then
-            codesign --force --deep --options runtime \
-              --entitlements AetherApp/Resources/entitlements.mac \
-              --sign "\$DEV_ID" "\$APP"
+          APP="${{ steps.app.outputs.path }}"
+          if [ -n "$DEV_ID" ]; then
+            codesign --force --deep --options runtime               --entitlements AetherApp/Resources/entitlements.mac               --sign "$DEV_ID" "$APP"
           else
-            codesign --force --deep --options runtime \
-              --entitlements AetherApp/Resources/entitlements.mac \
-              -s - "\$APP"
+            codesign --force --deep --options runtime               --entitlements AetherApp/Resources/entitlements.mac               -s - "$APP"
           fi
-          codesign --verify --deep --strict "\$APP"
+          codesign --verify --deep --strict "$APP"
 
       - name: Create DMG
         env:
-          ARCH: \${{ matrix.arch }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          APP="\${{ steps.app.outputs.path }}"
-          create-dmg \
-            --volname "Aether" \
-            --window-pos 200 120 \
-            --window-size 500 300 \
-            --icon "AetherApp.app" 125 135 \
-            --hide-extension "AetherApp.app" \
-            --app-drop-link 375 135 \
-            "Aether-\$ARCH.dmg" "\$APP"
+          APP="${{ steps.app.outputs.path }}"
+          create-dmg             --volname "Aether"             --window-pos 200 120             --window-size 500 300             --icon "AetherApp.app" 125 135             --hide-extension "AetherApp.app"             --app-drop-link 375 135             "Aether-$ARCH.dmg" "$APP"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Aether-macOS-\${{ matrix.arch }}
+          name: Aether-macOS-${{ matrix.arch }}
           path: |
-            Aether-\${{ matrix.arch }}.dmg
-            \${{ steps.app.outputs.path }}
+            Aether-${{ matrix.arch }}.dmg
+            ${{ steps.app.outputs.path }}
           retention-days: 90
 
       - name: Draft release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: Aether-\${{ matrix.arch }}.dmg
+          files: Aether-${{ matrix.arch }}.dmg

@@ -149,14 +149,14 @@ jobs:
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-          if git diff --quiet HEAD^ HEAD -- AetherApp/Resources/Info.plist; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download build artifacts
-        if: steps.version.outputs.changed == 'true'
+        if: steps.version.outputs.needed == 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: Aether-macOS-*

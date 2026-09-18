@@ -99,7 +99,6 @@ final class AetherPacketBridge: @unchecked Sendable {
             self.generation += 1
             self.clearPending()
             self.drain(self.bridgeFD)
-            self.drain(self.workerFD)
             self.readFromFlow()
         }
     }

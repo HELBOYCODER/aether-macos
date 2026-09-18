@@ -109,7 +109,8 @@ jobs:
           file "$APP/Contents/MacOS/AetherApp"
           EXT="$APP/Contents/PlugIns/AetherPacketTunnel.appex"
           test -f "$EXT/Contents/MacOS/AetherPacketTunnel"
-          nm -gU "$EXT/Contents/MacOS/AetherPacketTunnel" | grep -q "hev_socks5_tunnel_main_from_str"
+          nm -gU "$EXT/Contents/MacOS/AetherPacketTunnel" > /tmp/aether-packet-tunnel-nm.txt
+          grep -q "hev_socks5_tunnel_main_from_str" /tmp/aether-packet-tunnel-nm.txt
 
       - name: Sign
         env:
